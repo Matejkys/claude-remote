@@ -1,0 +1,23 @@
+{
+  "name": "claude-remote-relay",
+  "version": "1.0.0",
+  "description": "Telegram relay for Claude Code remote control via tmux",
+  "type": "module",
+  "main": "dist/bot.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/bot.js",
+    "dev": "tsx src/bot.ts"
+  },
+  "dependencies": {
+    "grammy": "^1.35.0",
+    "ansi-to-html": "^0.7.2",
+    "sharp": "^0.33.5",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

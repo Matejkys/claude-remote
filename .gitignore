@@ -1,0 +1,17 @@
+# Environment and secrets
+.env
+*.secret
+
+# Node.js
+node_modules/
+telegram-relay/dist/
+telegram-relay/node_modules/
+
+# Swift build
+ClaudeRemote/.build/
+ClaudeRemote/build/
+ClaudeRemote/.swiftpm/
+*.xcuserdata/
+
+# macOS
+.DS_Store
