@@ -45,9 +45,11 @@ When you're at your Mac, you get native macOS notifications. When you're away, n
 git clone https://github.com/Matejkys/claude-remote.git
 cd claude-remote
 
-# Build the macOS menu bar app
+# Build and install the macOS menu bar app
 cd ClaudeRemote
-make bundle
+make install
+# You'll be prompted for your macOS password to set up keychain access
+# This prevents the app from asking for keychain permission on every launch
 cd ..
 
 # Install Node.js relay dependencies
@@ -67,10 +69,10 @@ cd ..
 
 ### 3. Launch and configure
 
-```bash
-# Start the menu bar app
-open ClaudeRemote/build/ClaudeRemote.app
-```
+The app is now installed in `/Applications/ClaudeRemote.app`. Launch it from:
+- Spotlight (⌘ Space → "ClaudeRemote")
+- Applications folder
+- Or: `open /Applications/ClaudeRemote.app`
 
 1. Click the antenna icon in the menu bar
 2. Go to **Telegram** section → **Configure...**
@@ -135,6 +137,17 @@ cy() {
 cd telegram-relay
 npm start
 ```
+
+## Updating
+
+To rebuild and reinstall the app after making changes:
+
+```bash
+cd ClaudeRemote
+make install
+```
+
+This will clean build, install to `/Applications`, and automatically set up keychain access.
 
 ## Usage
 

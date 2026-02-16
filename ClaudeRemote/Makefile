@@ -10,7 +10,7 @@ INSTALL_DIR = /Applications
 
 .PHONY: all build bundle install clean run
 
-all: bundle
+all: install
 
 build:
 	swift build -c release
@@ -25,7 +25,23 @@ bundle: build
 install: bundle
 	cp -R $(APP_BUNDLE) $(INSTALL_DIR)/$(APP_NAME).app
 	xattr -rc $(INSTALL_DIR)/$(APP_NAME).app
-	@echo "Installed to $(INSTALL_DIR)/$(APP_NAME).app"
+	@echo "✅ Installed to $(INSTALL_DIR)/$(APP_NAME).app"
+	@echo ""
+	@echo "🔑 Setting up keychain access..."
+	@echo "   (prevents keychain prompts on every launch)"
+	@echo ""
+	@bash -c 'read -s -p "Enter your macOS password: " PASS; echo ""; \
+		for ACCOUNT in telegram-bot-token telegram-user-id; do \
+			if security find-generic-password -s "com.matejkys.ClaudeRemote" -a "$$ACCOUNT" >/dev/null 2>&1; then \
+				echo "Setting ACL for $$ACCOUNT..."; \
+				security set-generic-password-partition-list \
+					-s "com.matejkys.ClaudeRemote" \
+					-a "$$ACCOUNT" \
+					-S -k "$$PASS" 2>/dev/null && echo "  ✅ Done" || echo "  ℹ️  Item not found yet (will be created on first use)"; \
+			fi; \
+		done; \
+		echo ""; \
+		echo "✅ Installation complete!"'
 
 run: bundle
 	open $(APP_BUNDLE)
