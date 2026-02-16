@@ -23,12 +23,23 @@ final class TelegramService {
         guard let token = settings.telegramBotToken,
               let chatID = settings.telegramUserID
         else {
-            print("[TelegramService] Cannot send: Telegram not configured")
+            print("[TelegramService] ERROR: Cannot send - Telegram not configured")
+            print("[TelegramService] Token exists: \(settings.telegramBotToken != nil)")
+            print("[TelegramService] Chat ID exists: \(settings.telegramUserID != nil)")
             return
         }
 
+        print("[TelegramService] Sending notification to Telegram")
+        print("[TelegramService] Event: \(payload.eventCategory), Title: \(payload.title ?? "nil")")
+
         let text = formatMessage(payload: payload)
-        await sendMessage(token: token, chatID: chatID, text: text)
+        let success = await sendMessage(token: token, chatID: chatID, text: text)
+
+        if success {
+            print("[TelegramService] ✓ Notification sent successfully")
+        } else {
+            print("[TelegramService] ✗ FAILED to send notification")
+        }
     }
 
     // MARK: - Test Connection
@@ -192,10 +203,24 @@ final class TelegramService {
             }
         }
 
-        // Include tmux pane info if available
+        // Include project/session info if available
+        var contextParts: [String] = []
+
+        if let project = payload.projectName, !project.isEmpty {
+            contextParts.append("Project: \(escapeHTML(project))")
+        }
+
+        if let session = payload.tmuxSession, !session.isEmpty {
+            contextParts.append("Session: \(escapeHTML(session))")
+        }
+
         if let pane = payload.tmuxPane, !pane.isEmpty {
+            contextParts.append("Pane: \(escapeHTML(pane))")
+        }
+
+        if !contextParts.isEmpty {
             parts.append("")
-            parts.append("<i>Pane: \(escapeHTML(pane))</i>")
+            parts.append("<i>\(contextParts.joined(separator: " | "))</i>")
         }
 
         return parts.joined(separator: "\n")

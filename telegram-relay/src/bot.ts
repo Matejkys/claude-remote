@@ -1,4 +1,4 @@
-import { Bot, Context, InputFile } from "grammy";
+import { Bot, Context, InputFile, InlineKeyboard } from "grammy";
 import { config } from "./config.js";
 import {
   sendKeys,
@@ -14,6 +14,9 @@ import {
 
 // Maximum length for a single Telegram message
 const TELEGRAM_MESSAGE_LIMIT = 4096;
+
+// Temporary storage for messages awaiting pane selection
+const pendingMessages = new Map<number, string>();
 
 // Number of lines to capture for /status command
 const STATUS_CAPTURE_LINES = 50;
@@ -99,9 +102,9 @@ function escapeHtml(text: string): string {
  * Scans all panes across all claude-* tmux sessions.
  */
 async function resolveTargetPane(): Promise<
-  | { type: "single"; pane: PaneStatus }
+  | { type: "single"; pane: PaneStatus & { sessionName: string } }
   | { type: "none" }
-  | { type: "multiple"; panes: PaneStatus[] }
+  | { type: "multiple"; panes: Array<PaneStatus & { sessionName: string }> }
 > {
   const allPanes = await listAllPanesForPrefix(config.tmuxSessionPrefix);
 
@@ -109,10 +112,13 @@ async function resolveTargetPane(): Promise<
     return { type: "none" };
   }
 
-  const statuses = await Promise.all(
-    allPanes.map((p) => isWaitingForInput(p.paneId))
+  const statusesWithSession = await Promise.all(
+    allPanes.map(async (p) => {
+      const status = await isWaitingForInput(p.paneId);
+      return { ...status, sessionName: p.sessionName };
+    })
   );
-  const waitingPanes = statuses.filter((s) => s.isWaiting);
+  const waitingPanes = statusesWithSession.filter((s) => s.isWaiting);
 
   if (waitingPanes.length === 0) {
     return { type: "none" };
@@ -137,15 +143,12 @@ async function sendToWaitingPane(
 
   switch (result.type) {
     case "none":
-      await ctx.reply(
-        "Claude Code is not waiting for input. Use /status to see the current terminal state."
-      );
       return false;
 
     case "single":
       await sendKeys(result.pane.paneId, text);
       await ctx.reply(
-        `Sent to pane ${result.pane.paneId} (${result.pane.matchedPattern || "waiting"})`
+        `✓ Response sent to ${result.pane.sessionName} [${result.pane.paneId}]`
       );
       return true;
 
@@ -153,7 +156,7 @@ async function sendToWaitingPane(
       const paneList = result.panes
         .map(
           (p) =>
-            `  ${p.paneId} (${p.matchedPattern || "waiting"})`
+            `  ${p.sessionName} [${p.paneId}]`
         )
         .join("\n");
       await ctx.reply(
@@ -226,6 +229,56 @@ bot.command("pane", async (ctx) => {
   }
 });
 
+bot.command("prompt", async (ctx) => {
+  if (!isAuthorizedUser(ctx)) return;
+
+  const text = ctx.match?.trim();
+  if (!text) {
+    await ctx.reply("Usage: /prompt <text>\nExample: /prompt Explain this code");
+    return;
+  }
+
+  const allPanes = await listAllPanesForPrefix(config.tmuxSessionPrefix);
+
+  if (allPanes.length === 0) {
+    await ctx.reply(
+      "No claude-* tmux sessions found. Start one with 'cy'."
+    );
+    return;
+  }
+
+  // If single pane, send directly
+  if (allPanes.length === 1) {
+    try {
+      await sendKeys(allPanes[0].paneId, text);
+      const label = allPanes[0].projectName || allPanes[0].sessionName;
+      await ctx.reply(`✓ Prompt sent to ${label} [${allPanes[0].paneId}]`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      await ctx.reply(`✗ Failed to send prompt: ${message}`);
+    }
+    return;
+  }
+
+  // Multiple panes - store message and show inline keyboard
+  if (ctx.from?.id) {
+    pendingMessages.set(ctx.from.id, text);
+  }
+
+  const keyboard = new InlineKeyboard();
+  for (const pane of allPanes) {
+    const label = pane.projectName
+      ? `${pane.projectName} (${pane.sessionName}) [${pane.paneId}]`
+      : `${pane.sessionName} [${pane.paneId}]`;
+    keyboard.text(label, `select_pane:${pane.paneId}`).row();
+  }
+
+  await ctx.reply(
+    "Multiple panes found. Choose where to send your prompt:",
+    { reply_markup: keyboard }
+  );
+});
+
 bot.command("status", async (ctx) => {
   if (!isAuthorizedUser(ctx)) return;
 
@@ -289,8 +342,49 @@ bot.command("sessions", async (ctx) => {
   await sendMessage(`<b>Active tmux sessions:</b>\n<pre>${escaped}</pre>`);
 });
 
+// --- Callback Query Handler (inline keyboard buttons) ---
+
+bot.on("callback_query:data", async (ctx) => {
+  if (!isAuthorizedUser(ctx)) return;
+
+  const data = ctx.callbackQuery.data;
+
+  // Handle pane selection
+  if (data.startsWith("select_pane:")) {
+    const paneId = data.replace("select_pane:", "");
+    const userId = ctx.from?.id;
+
+    if (!userId) {
+      await ctx.answerCallbackQuery("Error: User ID not found");
+      return;
+    }
+
+    const text = pendingMessages.get(userId);
+    if (!text) {
+      await ctx.answerCallbackQuery("Message expired. Please send it again.");
+      return;
+    }
+
+    // Send the text to selected pane
+    try {
+      await sendKeys(paneId, text);
+      await ctx.answerCallbackQuery("✓ Message sent!");
+      await ctx.editMessageText(`✓ Sent to pane ${paneId}:\n"${text}"`);
+      pendingMessages.delete(userId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      await ctx.answerCallbackQuery(`✗ Failed: ${message}`);
+    }
+    return;
+  }
+
+  await ctx.answerCallbackQuery("Unknown action");
+});
+
 // --- Free text handler ---
-// Catches all non-command text messages and sends them to the waiting pane
+// Catches all non-command text messages and sends them intelligently:
+// - If CC is waiting for input (permission, question) → answer the prompt
+// - If CC is idle (shell prompt) → send as new prompt
 
 bot.on("message:text", async (ctx) => {
   if (!isAuthorizedUser(ctx)) return;
@@ -304,6 +398,7 @@ bot.on("message:text", async (ctx) => {
         "/y or /yes - approve permission\n" +
         "/n or /no - deny permission\n" +
         "/select <N> - select numbered option\n" +
+        "/prompt <text> - send new prompt to Claude\n" +
         "/pane <id> <text> - send to specific pane\n" +
         "/status - view terminal output\n" +
         "/screenshot - terminal as image\n" +
@@ -312,7 +407,51 @@ bot.on("message:text", async (ctx) => {
     return;
   }
 
-  await sendToWaitingPane(ctx, text);
+  // Try sending to waiting pane first (for permission/question prompts)
+  const sent = await sendToWaitingPane(ctx, text);
+
+  // If no waiting pane, send as new prompt to any available pane
+  if (!sent) {
+    const allPanes = await listAllPanesForPrefix(config.tmuxSessionPrefix);
+
+    if (allPanes.length === 0) {
+      await ctx.reply(
+        "No claude-* tmux sessions found. Start one with 'cy'."
+      );
+      return;
+    }
+
+    // If single pane, send directly
+    if (allPanes.length === 1) {
+      try {
+        await sendKeys(allPanes[0].paneId, text);
+        const label = allPanes[0].projectName || allPanes[0].sessionName;
+        await ctx.reply(`✓ Prompt sent to ${label} [${allPanes[0].paneId}]`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        await ctx.reply(`✗ Failed to send: ${message}`);
+      }
+      return;
+    }
+
+    // Multiple panes - store message and show inline keyboard
+    if (ctx.from?.id) {
+      pendingMessages.set(ctx.from.id, text);
+    }
+
+    const keyboard = new InlineKeyboard();
+    for (const pane of allPanes) {
+      const label = pane.projectName
+        ? `${pane.projectName} (${pane.sessionName}) [${pane.paneId}]`
+        : `${pane.sessionName} [${pane.paneId}]`;
+      keyboard.text(label, `select_pane:${pane.paneId}`).row();
+    }
+
+    await ctx.reply(
+      "Multiple panes found. Choose where to send your message:",
+      { reply_markup: keyboard }
+    );
+  }
 });
 
 // --- Startup ---

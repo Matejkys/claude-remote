@@ -24,8 +24,6 @@ struct MenuBarView: View {
                 Divider()
                 presenceSection
                 Divider()
-                notificationSection
-                Divider()
                 telegramSection
                 Divider()
                 sessionsSection
@@ -99,35 +97,6 @@ struct MenuBarView: View {
             .padding(.leading, 4)
     }
 
-    // MARK: - Notifications
-
-    private var notificationSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Notifications")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            Text("When at computer:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Toggle("macOS notification", isOn: $settings.notifyLocalWhenPresent)
-                .toggleStyle(.checkbox)
-                .padding(.leading, 4)
-            Toggle("Sound", isOn: $settings.notifySoundWhenPresent)
-                .toggleStyle(.checkbox)
-                .padding(.leading, 4)
-
-            Text("When away:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Toggle("Telegram", isOn: $settings.notifyTelegramWhenAway)
-                .toggleStyle(.checkbox)
-                .padding(.leading, 4)
-            Toggle("macOS notification", isOn: $settings.notifyLocalWhenAway)
-                .toggleStyle(.checkbox)
-                .padding(.leading, 4)
-        }
-    }
 
     // MARK: - Telegram
 

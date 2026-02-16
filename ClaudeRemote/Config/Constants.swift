@@ -69,10 +69,6 @@ enum Constants {
         static let displaySleepAway = "displaySleepAway"
         static let detectionMode = "detectionMode"
         static let manualAway = "manualAway"
-        static let notifyLocalWhenPresent = "notifyLocalWhenPresent"
-        static let notifySoundWhenPresent = "notifySoundWhenPresent"
-        static let notifyTelegramWhenAway = "notifyTelegramWhenAway"
-        static let notifyLocalWhenAway = "notifyLocalWhenAway"
         static let tmuxSessionName = "tmuxSessionName"
         static let launchAtLogin = "launchAtLogin"
     }

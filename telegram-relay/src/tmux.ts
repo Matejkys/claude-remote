@@ -72,27 +72,25 @@ export interface PaneStatus {
 }
 
 /**
- * Sanitizes text for safe injection via tmux send-keys.
- * Wraps in single quotes and escapes any embedded single quotes.
- */
-function sanitizeForTmux(text: string): string {
-  // Escape single quotes by ending the current single-quote string,
-  // adding an escaped single quote, and starting a new single-quote string
-  return text.replace(/'/g, "'\\''");
-}
-
-/**
  * Sends keystrokes to a specific tmux pane.
- * Input is sanitized: wrapped in single quotes with embedded quotes escaped.
+ * Uses -l (literal) flag to send text character-by-character without interpretation.
+ * Then sends Enter separately to submit.
  */
 export async function sendKeys(paneId: string, text: string): Promise<void> {
-  const sanitized = sanitizeForTmux(text);
+  // Send text literally (no shell interpretation)
   await execFileAsync("tmux", [
     "send-keys",
     "-t",
     paneId,
-    "--",
-    `'${sanitized}'`,
+    "-l",
+    text,
+  ]);
+
+  // Send Enter to submit
+  await execFileAsync("tmux", [
+    "send-keys",
+    "-t",
+    paneId,
     "Enter",
   ]);
 }
@@ -249,22 +247,47 @@ export async function listSessionsByPrefix(prefix: string): Promise<SessionInfo[
 
 /**
  * Lists all pane IDs across all sessions matching the given prefix.
- * Returns panes tagged with their session name for disambiguation.
+ * Returns panes tagged with their session name and project name for disambiguation.
  */
 export async function listAllPanesForPrefix(
   prefix: string
-): Promise<Array<{ sessionName: string; paneId: string }>> {
+): Promise<Array<{ sessionName: string; paneId: string; projectName?: string }>> {
   const sessions = await listSessionsByPrefix(prefix);
-  const results: Array<{ sessionName: string; paneId: string }> = [];
+  const results: Array<{ sessionName: string; paneId: string; projectName?: string }> = [];
 
   for (const session of sessions) {
     const panes = await listPanes(session.name);
     for (const paneId of panes) {
-      results.push({ sessionName: session.name, paneId });
+      // Get project name from pane's working directory
+      const projectName = await getPaneProjectName(paneId);
+      results.push({ sessionName: session.name, paneId, projectName });
     }
   }
 
   return results;
+}
+
+/**
+ * Gets the project name (last directory in path) for a tmux pane.
+ */
+async function getPaneProjectName(paneId: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync("tmux", [
+      "display-message",
+      "-t",
+      paneId,
+      "-p",
+      "#{pane_current_path}",
+    ]);
+    const workingDir = stdout.trim();
+    if (workingDir) {
+      const parts = workingDir.split("/");
+      return parts[parts.length - 1] || undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 /**

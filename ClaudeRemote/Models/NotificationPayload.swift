@@ -18,6 +18,12 @@ struct NotificationPayload: Codable, Sendable {
     let tmuxPane: String?
     /// Last N lines of terminal output captured from the tmux pane
     let terminalContext: String?
+    /// tmux session name (e.g., "claude-155127")
+    let tmuxSession: String?
+    /// Working directory where CC is running
+    let workingDir: String?
+    /// Project name (last directory in working_dir path)
+    let projectName: String?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -25,6 +31,9 @@ struct NotificationPayload: Codable, Sendable {
         case message
         case tmuxPane = "tmux_pane"
         case terminalContext = "terminal_context"
+        case tmuxSession = "tmux_session"
+        case workingDir = "working_dir"
+        case projectName = "project_name"
     }
 }
 

@@ -18,9 +18,22 @@ final class NotificationRouter {
 
     /// Routes a notification payload to the correct channel(s) based on presence and preferences.
     func route(payload: NotificationPayload) async {
-        if appState.isAway {
+        let isAway = appState.isAway
+        let detectionMode = settings.detectionMode
+        let manualAway = settings.manualAway
+
+        print("[NotificationRouter] Routing notification:")
+        print("  - isAway: \(isAway)")
+        print("  - detectionMode: \(detectionMode)")
+        print("  - manualAway: \(manualAway)")
+        print("  - eventCategory: \(payload.eventCategory)")
+        print("  - title: \(payload.title ?? "nil")")
+
+        if isAway {
+            print("[NotificationRouter] User is AWAY - routing to Telegram")
             await routeAway(payload: payload)
         } else {
+            print("[NotificationRouter] User is PRESENT - routing to local notification")
             await routePresent(payload: payload)
         }
     }
@@ -28,28 +41,21 @@ final class NotificationRouter {
     // MARK: - Private Routing
 
     /// Routes notification when user IS at the computer
+    /// Always sends macOS notification (user controls sound in System Settings)
     private func routePresent(payload: NotificationPayload) async {
-        if settings.notifyLocalWhenPresent {
-            await localNotifier.send(
-                payload: payload,
-                playSound: settings.notifySoundWhenPresent
-            )
-        }
+        print("[NotificationRouter] Sending local notification")
+        await localNotifier.send(payload: payload)
     }
 
     /// Routes notification when user is AWAY from the computer
+    /// Only sends Telegram notification (if configured), never local
     private func routeAway(payload: NotificationPayload) async {
-        // Send to Telegram if configured and enabled
-        if settings.notifyTelegramWhenAway && settings.isTelegramConfigured {
+        if settings.isTelegramConfigured {
+            print("[NotificationRouter] Telegram is configured - sending notification")
             await telegramService.send(payload: payload)
-        }
-
-        // Also send local notification if enabled (useful for when user returns)
-        if settings.notifyLocalWhenAway {
-            await localNotifier.send(
-                payload: payload,
-                playSound: false // Never play sound when away - user is not there to hear it
-            )
+        } else {
+            print("[NotificationRouter] WARNING: User is away but Telegram is NOT configured!")
+            print("[NotificationRouter] Notification will be lost. Configure Telegram in the app.")
         }
     }
 }

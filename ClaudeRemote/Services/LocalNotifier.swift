@@ -65,7 +65,8 @@ final class LocalNotifier: NSObject {
 
     /// Delivers a local notification based on the CC notification payload.
     /// Permission-type notifications include Approve/Deny action buttons.
-    func send(payload: NotificationPayload, playSound: Bool) async {
+    /// Sound is controlled by the user's macOS System Settings.
+    func send(payload: NotificationPayload) async {
         let content = UNMutableNotificationContent()
 
         // Set title based on event category
@@ -91,9 +92,8 @@ final class LocalNotifier: NSObject {
         }
         content.body = bodyParts.joined(separator: "\n")
 
-        if playSound {
-            content.sound = .default
-        }
+        // Always use default sound - user controls this in System Settings
+        content.sound = .default
 
         // Use a unique identifier so multiple notifications don't replace each other
         let identifier = "claude-remote-\(UUID().uuidString)"

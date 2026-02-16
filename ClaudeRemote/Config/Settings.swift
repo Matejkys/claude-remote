@@ -31,24 +31,6 @@ final class Settings {
         didSet { UserDefaults.standard.set(manualAway, forKey: Constants.Defaults.manualAway) }
     }
 
-    // MARK: - Notification Preferences
-
-    var notifyLocalWhenPresent: Bool {
-        didSet { UserDefaults.standard.set(notifyLocalWhenPresent, forKey: Constants.Defaults.notifyLocalWhenPresent) }
-    }
-
-    var notifySoundWhenPresent: Bool {
-        didSet { UserDefaults.standard.set(notifySoundWhenPresent, forKey: Constants.Defaults.notifySoundWhenPresent) }
-    }
-
-    var notifyTelegramWhenAway: Bool {
-        didSet { UserDefaults.standard.set(notifyTelegramWhenAway, forKey: Constants.Defaults.notifyTelegramWhenAway) }
-    }
-
-    var notifyLocalWhenAway: Bool {
-        didSet { UserDefaults.standard.set(notifyLocalWhenAway, forKey: Constants.Defaults.notifyLocalWhenAway) }
-    }
-
     // MARK: - tmux
 
     var tmuxSessionName: String {
@@ -76,10 +58,6 @@ final class Settings {
             Constants.Defaults.displaySleepAway: true,
             Constants.Defaults.detectionMode: DetectionMode.automatic.rawValue,
             Constants.Defaults.manualAway: false,
-            Constants.Defaults.notifyLocalWhenPresent: true,
-            Constants.Defaults.notifySoundWhenPresent: false,
-            Constants.Defaults.notifyTelegramWhenAway: true,
-            Constants.Defaults.notifyLocalWhenAway: true,
             Constants.Defaults.tmuxSessionName: Constants.defaultTmuxSessionName,
             Constants.Defaults.launchAtLogin: false,
         ])
@@ -89,10 +67,6 @@ final class Settings {
         self.displaySleepAway = defaults.bool(forKey: Constants.Defaults.displaySleepAway)
         self.detectionMode = DetectionMode(rawValue: defaults.string(forKey: Constants.Defaults.detectionMode) ?? "") ?? .automatic
         self.manualAway = defaults.bool(forKey: Constants.Defaults.manualAway)
-        self.notifyLocalWhenPresent = defaults.bool(forKey: Constants.Defaults.notifyLocalWhenPresent)
-        self.notifySoundWhenPresent = defaults.bool(forKey: Constants.Defaults.notifySoundWhenPresent)
-        self.notifyTelegramWhenAway = defaults.bool(forKey: Constants.Defaults.notifyTelegramWhenAway)
-        self.notifyLocalWhenAway = defaults.bool(forKey: Constants.Defaults.notifyLocalWhenAway)
         self.tmuxSessionName = defaults.string(forKey: Constants.Defaults.tmuxSessionName) ?? Constants.defaultTmuxSessionName
         self.launchAtLogin = defaults.bool(forKey: Constants.Defaults.launchAtLogin)
 
