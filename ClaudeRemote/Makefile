@@ -17,9 +17,10 @@ build:
 	swift build -c release
 
 bundle: build
-	mkdir -p $(MACOS_DIR)
+	mkdir -p $(MACOS_DIR) $(CONTENTS_DIR)/Resources
 	cp .build/release/$(APP_NAME) $(MACOS_DIR)/$(APP_NAME)
 	cp Info.plist $(CONTENTS_DIR)/Info.plist
+	cp AppIcon.icns $(CONTENTS_DIR)/Resources/AppIcon.icns
 	codesign --force --sign - $(APP_BUNDLE)
 	@echo "Built $(APP_BUNDLE)"
 

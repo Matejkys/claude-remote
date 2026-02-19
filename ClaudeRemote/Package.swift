@@ -8,7 +8,7 @@ let package = Package(
         .executableTarget(
             name: "ClaudeRemote",
             path: ".",
-            exclude: ["Package.swift", "Info.plist", "Makefile", "build"],
+            exclude: ["Package.swift", "Info.plist", "Makefile", "build", "AppIcon.icns"],
             linkerSettings: [
                 .linkedFramework("IOKit"),
                 .linkedFramework("Security"),
