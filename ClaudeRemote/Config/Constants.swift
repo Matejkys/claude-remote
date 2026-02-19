@@ -40,6 +40,8 @@ enum Constants {
     // MARK: - Telegram
     /// Telegram Bot API base URL
     static let telegramAPIBaseURL = "https://api.telegram.org"
+    /// Telegram API maximum message length in characters
+    static let telegramMaxMessageLength = 4096
 
     // MARK: - Keychain
     /// Keychain service identifier for this application

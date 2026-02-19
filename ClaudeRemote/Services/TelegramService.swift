@@ -97,15 +97,28 @@ final class TelegramService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        // Telegram API limits messages to 4096 characters.
+        // If message exceeds the limit, retry without HTML parse mode to avoid broken tags.
+        let parseMode: String?
+        let finalText: String
+        if text.count > Constants.telegramMaxMessageLength {
+            print("[TelegramService] Message too long (\(text.count) chars), sending as plain text")
+            finalText = stripHTML(text).prefix(Constants.telegramMaxMessageLength).description
+            parseMode = nil
+        } else {
+            finalText = text
+            parseMode = "HTML"
+        }
+
         let body = SendMessageBody(
             chatId: chatID,
-            text: text,
-            parseMode: "HTML"
+            text: finalText,
+            parseMode: parseMode
         )
 
         do {
             request.httpBody = try JSONEncoder().encode(body)
-            let (_, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 print("[TelegramService] No HTTP response")
@@ -113,7 +126,8 @@ final class TelegramService {
             }
 
             if httpResponse.statusCode != 200 {
-                print("[TelegramService] API returned status \(httpResponse.statusCode)")
+                let responseBody = String(data: data, encoding: .utf8) ?? "no body"
+                print("[TelegramService] API returned status \(httpResponse.statusCode): \(responseBody)")
                 return false
             }
 
@@ -234,12 +248,25 @@ final class TelegramService {
             .replacingOccurrences(of: ">", with: "&gt;")
     }
 
-    /// Trims excessive whitespace from terminal context and limits line count
+    /// Trims excessive whitespace from terminal context and limits line count and total length
     private func trimmedContext(_ context: String) -> String {
-        let maxContextLines = 20
+        let maxContextLines = 15
+        let maxContextChars = 2000
         let lines = context.components(separatedBy: "\n")
         let trimmed = lines.suffix(maxContextLines)
-        return trimmed.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let joined = trimmed.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        if joined.count > maxContextChars {
+            return String(joined.prefix(maxContextChars)) + "\n..."
+        }
+        return joined
+    }
+
+    /// Strips HTML tags for fallback plain text sending
+    private func stripHTML(_ text: String) -> String {
+        text.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
     }
 }
 
@@ -248,7 +275,7 @@ final class TelegramService {
 private struct SendMessageBody: Encodable {
     let chatId: String
     let text: String
-    let parseMode: String
+    let parseMode: String?
 
     enum CodingKeys: String, CodingKey {
         case chatId = "chat_id"

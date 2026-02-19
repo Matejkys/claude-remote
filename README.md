@@ -181,7 +181,7 @@ cy list         # List all active sessions
 
 ## Architecture
 
-The hook script (`notify-hook.sh`) captures terminal context via `tmux capture-pane` and POSTs enriched JSON to the SwiftUI app's local HTTP listener on `127.0.0.1:7677`. The app routes notifications based on presence state.
+The hook script (`notify-hook.sh`) transforms Claude Code's hook JSON format (`hook_event_name`, `last_assistant_message`) into ClaudeRemote's expected format (`type`, `title`, `message`), enriches it with tmux context via `tmux capture-pane`, and POSTs the payload to the SwiftUI app's local HTTP listener on `127.0.0.1:7677`. The app routes notifications based on presence state.
 
 The Telegram relay runs independently, polling for incoming messages. It dynamically discovers all `claude-*` tmux sessions and targets the correct pane that's waiting for input.
 

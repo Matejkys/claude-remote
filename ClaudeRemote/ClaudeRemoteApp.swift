@@ -49,6 +49,7 @@ final class AppController {
     private var httpListener: HTTPListener?
     private(set) var tmuxMonitor: TmuxMonitor?
     private var servicesStarted = false
+    private var backgroundActivity: NSObjectProtocol?
 
     init() {
         self.appState = AppState(settings: settings)
@@ -57,6 +58,14 @@ final class AppController {
     func startServices() async {
         guard !servicesStarted else { return }
         servicesStarted = true
+
+        // Prevent App Nap - LSUIElement apps get aggressively napped by macOS,
+        // which suspends URLSession requests (Telegram API) and delays MainActor tasks.
+        // This is critical for Away mode where we MUST send Telegram notifications promptly.
+        backgroundActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep, .suddenTerminationDisabled],
+            reason: "Listening for Claude Code notifications and routing to Telegram"
+        )
 
         let telegram = TelegramService(settings: settings)
         let notifier = LocalNotifier()
