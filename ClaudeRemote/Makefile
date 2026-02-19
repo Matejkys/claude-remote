@@ -13,6 +13,7 @@ INSTALL_DIR = /Applications
 all: install
 
 build:
+	rm -rf .build
 	swift build -c release
 
 bundle: build
@@ -23,6 +24,7 @@ bundle: build
 	@echo "Built $(APP_BUNDLE)"
 
 install: bundle
+	rm -rf $(INSTALL_DIR)/$(APP_NAME).app
 	cp -R $(APP_BUNDLE) $(INSTALL_DIR)/$(APP_NAME).app
 	xattr -rc $(INSTALL_DIR)/$(APP_NAME).app
 	@echo "✅ Installed to $(INSTALL_DIR)/$(APP_NAME).app"

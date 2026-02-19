@@ -87,7 +87,7 @@ final class AppState {
 
     /// SF Symbol name for the menu bar icon based on current presence state
     var menuBarIconName: String {
-        isAway ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right"
+        isAway ? "circle.dotted.circle.fill" : "circle.dotted.circle.fill"
     }
 
     /// Tint color name for the menu bar icon

@@ -23,9 +23,10 @@ struct ClaudeRemoteApp: App {
                 await appController.startServices()
             }
         } label: {
-            Image(systemName: "antenna.radiowaves.left.and.right")
+            Image(systemName: "circle.dotted.circle.fill")
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(appController.appState.isAway ? .orange : .green)
+                .font(.system(size: 16))
         }
         .menuBarExtraStyle(.window)
         .onChange(of: appController.settings.launchAtLogin) { _, newValue in
