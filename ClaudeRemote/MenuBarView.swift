@@ -214,12 +214,20 @@ struct MenuBarView: View {
                     Circle()
                         .fill(Color.green)
                         .frame(width: 6, height: 6)
-                    Text(session.name)
+                    Text(session.projectName ?? session.name)
                         .font(.system(.body, design: .monospaced))
                 }
-                Text("\(session.windows) window(s)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text(session.name)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("\(session.windows) window(s)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             Button {

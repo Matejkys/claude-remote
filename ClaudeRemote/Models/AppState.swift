@@ -69,6 +69,7 @@ final class AppState {
         let name: String
         let windows: Int
         let created: String
+        let projectName: String?
     }
 
     var tmuxSessions: [TmuxSession] = []

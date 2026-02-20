@@ -47,16 +47,39 @@ final class TmuxMonitor {
         let output = await shell(Constants.tmuxPath, "list-sessions", "-F", "#{session_name}\t#{session_windows}\t#{session_created_string}")
         guard !output.isEmpty else { return [] }
 
-        return output
+        let sessions = output
             .components(separatedBy: "\n")
             .filter { !$0.isEmpty && $0.hasPrefix(Constants.tmuxSessionPrefix) }
-            .map { line in
+            .map { line -> (name: String, windows: Int, created: String) in
                 let parts = line.components(separatedBy: "\t")
                 let name = parts.first ?? ""
                 let windows = parts.count > 1 ? Int(parts[1]) ?? 1 : 1
                 let created = parts.count > 2 ? parts[2] : ""
-                return AppState.TmuxSession(name: name, windows: windows, created: created)
+                return (name: name, windows: windows, created: created)
             }
+
+        // Resolve project names from first pane's working directory
+        var results: [AppState.TmuxSession] = []
+        for session in sessions {
+            let projectName = await getSessionProjectName(session.name)
+            results.append(AppState.TmuxSession(
+                name: session.name,
+                windows: session.windows,
+                created: session.created,
+                projectName: projectName
+            ))
+        }
+        return results
+    }
+
+    /// Gets the project name from the first pane's working directory in a session
+    private func getSessionProjectName(_ sessionName: String) async -> String? {
+        let output = await shell(Constants.tmuxPath, "list-panes", "-t", sessionName, "-F", "#{pane_current_path}")
+        guard !output.isEmpty else { return nil }
+        // Take the first pane's path
+        let path = output.components(separatedBy: "\n").first ?? ""
+        guard !path.isEmpty, path.hasPrefix("/") else { return nil }
+        return path.components(separatedBy: "/").last
     }
 
     // MARK: - Actions

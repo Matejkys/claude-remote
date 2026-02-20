@@ -291,18 +291,36 @@ bot.command("status", async (ctx) => {
     return;
   }
 
-  for (const { sessionName, paneId } of allPanes) {
+  // Single pane - show status directly
+  if (allPanes.length === 1) {
+    const { sessionName, paneId, projectName } = allPanes[0];
     try {
       const content = await capturePane(paneId, STATUS_CAPTURE_LINES);
       const escaped = escapeHtml(content);
-      const header = `<b>${escapeHtml(sessionName)} [${escapeHtml(paneId)}]:</b>\n`;
+      const label = projectName || sessionName;
+      const header = `<b>${escapeHtml(label)} (${escapeHtml(sessionName)}) [${escapeHtml(paneId)}]:</b>\n`;
       await sendMessage(`${header}<pre>${escaped}</pre>`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown error";
       await ctx.reply(`Failed to capture ${sessionName} ${paneId}: ${message}`);
     }
+    return;
   }
+
+  // Multiple panes - show inline keyboard for selection
+  const keyboard = new InlineKeyboard();
+  for (const pane of allPanes) {
+    const label = pane.projectName
+      ? `${pane.projectName} (${pane.sessionName}) [${pane.paneId}]`
+      : `${pane.sessionName} [${pane.paneId}]`;
+    keyboard.text(label, `status_pane:${pane.paneId}`).row();
+  }
+  keyboard.text("All panes", "status_pane:__all__").row();
+
+  await ctx.reply("Select a pane to view status:", {
+    reply_markup: keyboard,
+  });
 });
 
 bot.command("screenshot", async (ctx) => {
@@ -349,7 +367,7 @@ bot.on("callback_query:data", async (ctx) => {
 
   const data = ctx.callbackQuery.data;
 
-  // Handle pane selection
+  // Handle pane selection for prompt/message
   if (data.startsWith("select_pane:")) {
     const paneId = data.replace("select_pane:", "");
     const userId = ctx.from?.id;
@@ -374,6 +392,48 @@ bot.on("callback_query:data", async (ctx) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       await ctx.answerCallbackQuery(`✗ Failed: ${message}`);
+    }
+    return;
+  }
+
+  // Handle pane selection for /status command
+  if (data.startsWith("status_pane:")) {
+    const paneId = data.replace("status_pane:", "");
+    await ctx.answerCallbackQuery();
+
+    // Show all panes
+    if (paneId === "__all__") {
+      const allPanes = await listAllPanesForPrefix(config.tmuxSessionPrefix);
+      for (const { sessionName, paneId: pid, projectName } of allPanes) {
+        try {
+          const content = await capturePane(pid, STATUS_CAPTURE_LINES);
+          const escaped = escapeHtml(content);
+          const label = projectName || sessionName;
+          const header = `<b>${escapeHtml(label)} (${escapeHtml(sessionName)}) [${escapeHtml(pid)}]:</b>\n`;
+          await sendMessage(`${header}<pre>${escaped}</pre>`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          await sendMessage(`Failed to capture ${sessionName} ${pid}: ${message}`);
+        }
+      }
+      try { await ctx.deleteMessage(); } catch { /* ignore */ }
+      return;
+    }
+
+    // Show single selected pane
+    try {
+      const allPanes = await listAllPanesForPrefix(config.tmuxSessionPrefix);
+      const pane = allPanes.find((p) => p.paneId === paneId);
+      const content = await capturePane(paneId, STATUS_CAPTURE_LINES);
+      const escaped = escapeHtml(content);
+      const label = pane?.projectName || pane?.sessionName || paneId;
+      const sessionName = pane?.sessionName || "";
+      const header = `<b>${escapeHtml(label)} (${escapeHtml(sessionName)}) [${escapeHtml(paneId)}]:</b>\n`;
+      await sendMessage(`${header}<pre>${escaped}</pre>`);
+      try { await ctx.deleteMessage(); } catch { /* ignore */ }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      await sendMessage(`Failed to capture pane ${paneId}: ${message}`);
     }
     return;
   }
