@@ -3,13 +3,15 @@ import UserNotifications
 
 // Delivers native macOS notifications via UNUserNotificationCenter.
 // Supports action buttons for permission prompts (Approve/Deny).
-// Requests notification permission on first use.
+// Actions actually send responses to Claude Code via TmuxService.
 @MainActor
 final class LocalNotifier: NSObject {
     private let center = UNUserNotificationCenter.current()
+    private let tmuxService: TmuxService
     private var permissionGranted = false
 
-    override init() {
+    init(tmuxService: TmuxService) {
+        self.tmuxService = tmuxService
         super.init()
         center.delegate = self
         registerCategories()
@@ -65,7 +67,7 @@ final class LocalNotifier: NSObject {
 
     /// Delivers a local notification based on the CC notification payload.
     /// Permission-type notifications include Approve/Deny action buttons.
-    /// Sound is controlled by the user's macOS System Settings.
+    /// Stores tmux pane info in userInfo for action handling.
     func send(payload: NotificationPayload) async {
         let content = UNMutableNotificationContent()
 
@@ -95,6 +97,16 @@ final class LocalNotifier: NSObject {
         // Always use default sound - user controls this in System Settings
         content.sound = .default
 
+        // Store tmux context for action handling
+        var userInfo: [String: String] = [:]
+        if let pane = payload.tmuxPane {
+            userInfo["tmux_pane"] = pane
+        }
+        if let session = payload.tmuxSession {
+            userInfo["tmux_session"] = session
+        }
+        content.userInfo = userInfo
+
         // Use a unique identifier so multiple notifications don't replace each other
         let identifier = "claude-remote-\(UUID().uuidString)"
 
@@ -123,18 +135,38 @@ extension LocalNotifier: UNUserNotificationCenterDelegate {
         return [.banner, .sound]
     }
 
-    /// Handle notification action button presses (Approve/Deny)
+    /// Handle notification action button presses (Approve/Deny).
+    /// Actually sends the response to Claude Code via tmux.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
+        let userInfo = response.notification.request.content.userInfo
+        guard let paneId = userInfo["tmux_pane"] as? String, !paneId.isEmpty else {
+            print("[LocalNotifier] No tmux pane in notification userInfo, cannot send response")
+            return
+        }
+
+        let text: String
         switch response.actionIdentifier {
         case Constants.notificationActionApprove:
-            print("[LocalNotifier] User tapped Approve - sending to tmux would require relay")
+            text = "y"
         case Constants.notificationActionDeny:
-            print("[LocalNotifier] User tapped Deny - sending to tmux would require relay")
+            text = "n"
         default:
-            break
+            return
+        }
+
+        // Send the response to the tmux pane
+        let tmux = tmuxService
+        Task { @MainActor in
+            let result = await tmux.sendKeys(paneId: paneId, text: text)
+            switch result {
+            case .success:
+                print("[LocalNotifier] Sent '\(text)' to pane \(paneId)")
+            case .failure(let error):
+                print("[LocalNotifier] Failed to send '\(text)' to pane \(paneId): \(error)")
+            }
         }
     }
 }

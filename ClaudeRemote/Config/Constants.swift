@@ -34,8 +34,10 @@ enum Constants {
     static let tmuxSessionPrefix = "claude-"
     /// Interval in seconds between tmux session list refreshes
     static let tmuxPollingIntervalSeconds: TimeInterval = 5
-    /// Full path to tmux binary (Homebrew on Apple Silicon)
-    static let tmuxPath = "/opt/homebrew/bin/tmux"
+    /// Interval in seconds between terminal preview refreshes in detail view
+    static let terminalPreviewRefreshSeconds: TimeInterval = 3
+    /// Number of lines to capture for terminal preview
+    static let terminalPreviewLines = 30
 
     // MARK: - Telegram
     /// Telegram Bot API base URL

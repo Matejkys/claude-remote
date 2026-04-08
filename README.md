@@ -19,15 +19,39 @@ iPhone Telegram → Node.js relay → tmux send-keys → CC gets input
 - Screen lock/unlock events
 - Display sleep/wake events
 
-When you're at your Mac, you get native macOS notifications. When you're away, notifications go to Telegram with full terminal context, and you can reply to approve/deny permissions, answer questions, or send any input back to Claude Code.
+When you're at your Mac, you get native macOS notifications with working Approve/Deny buttons. When you're away, notifications go to Telegram with full terminal context, and you can reply to approve/deny permissions, answer questions, or send any input back to Claude Code.
 
 ## Components
 
 | Component | Tech | Purpose |
 |-----------|------|---------|
-| **ClaudeRemote** | SwiftUI (macOS 14+) | Menu bar app — presence detection, notification routing, settings |
+| **ClaudeRemote** | SwiftUI (macOS 14+) | Menu bar app + standalone window — session management, presence detection, notification routing |
 | **telegram-relay** | Node.js + TypeScript | Telegram bot — long-polling, tmux interaction, command handling |
 | **notify-hook.sh** | Bash | Claude Code hook — enriches notifications with tmux context |
+
+## Features
+
+### Session Manager
+- **Live session list** with state detection (Active, Waiting for Input, Idle)
+- **Color-coded indicators** — blue (active), orange (waiting), gray (idle)
+- **Project name detection** — resolves via git root, falls back to working directory
+- **Quick actions** from menu bar: copy attach command, kill session, open in app
+- **Full app window** with sidebar + detail panel:
+  - Live terminal preview with auto-refresh
+  - Send input directly to Claude Code sessions
+  - Quick action buttons (Approve/Deny, numbered selections)
+  - Rename and kill sessions with confirmation
+  - Session info (project, working dir, panes, created time)
+
+### Notification Routing
+- **Approve/Deny buttons** on macOS notifications actually send responses to Claude Code
+- **Telegram forwarding** with terminal context when away
+- **Presence-based routing** — automatic or manual mode
+
+### Remote Control (Telegram)
+- Approve/deny permissions, answer questions, send prompts
+- View terminal output and screenshots
+- Multi-session support with pane disambiguation
 
 ## Prerequisites
 
@@ -70,15 +94,16 @@ cd ..
 ### 3. Launch and configure
 
 The app is now installed in `/Applications/ClaudeRemote.app`. Launch it from:
-- Spotlight (⌘ Space → "ClaudeRemote")
+- Spotlight (Cmd+Space → "ClaudeRemote")
 - Applications folder
 - Or: `open /Applications/ClaudeRemote.app`
 
-1. Click the antenna icon in the menu bar
-2. Go to **Telegram** section → **Configure...**
-3. Enter your bot token and user ID
-4. Click **Save & Test**
-5. **Important:** Send `/start` to your bot in Telegram first, then test again
+1. Click the icon in the menu bar
+2. Click **Settings...** at the bottom
+3. Go to **Telegram** section → **Configure...**
+4. Enter your bot token and user ID
+5. Click **Save & Test**
+6. **Important:** Send `/start` to your bot in Telegram first, then test again
 
 ### 4. Configure Claude Code hooks
 
@@ -159,6 +184,14 @@ cy attach       # Attach to the most recent session
 cy list         # List all active sessions
 ```
 
+### Menu bar app
+
+- **Green icon** = at computer (notifications go to macOS)
+- **Orange icon** = away (notifications go to Telegram)
+- Click icon to see all sessions with state indicators and quick actions
+- Click the **window icon** on a session to open the full app with terminal preview and input
+- Click **Settings...** to configure presence detection, Telegram, and launch at login
+
 ### Telegram commands
 
 | Command | Description |
@@ -172,16 +205,11 @@ cy list         # List all active sessions
 | `/pane <id> <text>` | Send to a specific pane (multi-pane) |
 | Free text | Sent directly to the waiting pane |
 
-### Menu bar app
-
-- **Green icon** = at computer (notifications go to macOS)
-- **Orange icon** = away (notifications go to Telegram)
-- Manage tmux sessions: copy attach command, kill sessions
-- Configure presence detection thresholds and notification preferences
-
 ## Architecture
 
 The hook script (`notify-hook.sh`) transforms Claude Code's hook JSON format (`hook_event_name`, `last_assistant_message`) into ClaudeRemote's expected format (`type`, `title`, `message`), enriches it with tmux context via `tmux capture-pane`, and POSTs the payload to the SwiftUI app's local HTTP listener on `127.0.0.1:7677`. The app routes notifications based on presence state.
+
+The macOS app uses a robust `TmuxService` with dynamic tmux path discovery, async process execution with proper pipe handling, and exit code checking. Session state is detected by analyzing terminal content against known Claude Code prompt patterns (ported from the Telegram relay's TypeScript implementation).
 
 The Telegram relay runs independently, polling for incoming messages. It dynamically discovers all `claude-*` tmux sessions and targets the correct pane that's waiting for input.
 
