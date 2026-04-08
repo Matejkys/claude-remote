@@ -3,27 +3,49 @@ import ServiceManagement
 
 // ClaudeRemote - macOS menu bar app that routes Claude Code notifications
 // locally (when at computer) or to Telegram (when away).
-// Architecture: compact menu bar dropdown + standalone app window for full management.
+// Architecture: rich popover from menu bar icon + standalone app window for full management.
 @main
 struct ClaudeRemoteApp: App {
     @State private var appController = AppController()
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        // Compact menu bar dropdown (OrbStack-style)
+        // Rich popover from menu bar icon
         MenuBarExtra {
-            MenuBarMenu(appController: appController)
-                .task {
-                    await appController.startServices()
-                }
+            MenuBarPopover(
+                appState: appController.appState,
+                settings: appController.settings,
+                tmuxMonitor: appController.tmuxMonitor,
+                onOpenApp: { sessionId in
+                    appController.selectedSessionId = sessionId
+                    openWindow(id: "main")
+                    NSApp.activate(ignoringOtherApps: true)
+                },
+                onOpenSettings: {
+                    openWindow(id: "settings")
+                    NSApp.activate(ignoringOtherApps: true)
+                },
+                onQuit: { NSApplication.shared.terminate(nil) }
+            )
+            .frame(width: 340)
+            .task {
+                await appController.startServices()
+            }
         } label: {
             HStack(spacing: 2) {
                 Image(systemName: "circle.dotted.circle.fill")
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(appController.appState.isAway ? .orange : .green)
                     .font(.system(size: 16))
+
+                if appController.appState.waitingSessionCount > 0 {
+                    Text("\(appController.appState.waitingSessionCount)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.orange)
+                }
             }
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
 
         // Full app window opened on demand
         Window("Claude Remote", id: "main") {
@@ -42,99 +64,6 @@ struct ClaudeRemoteApp: App {
         }
         .defaultSize(width: 400, height: 500)
         .windowResizability(.contentSize)
-    }
-}
-
-// MARK: - Menu Bar Dropdown
-
-/// Compact menu with session list, quick actions, and app controls.
-/// Uses .menu style which only supports Button/Toggle/Divider/Menu.
-struct MenuBarMenu: View {
-    let appController: AppController
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        // Open main app window
-        Button("Open Claude Remote") {
-            openWindow(id: "main")
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        .keyboardShortcut("n")
-
-        Divider()
-
-        // Session list
-        if appController.appState.tmuxSessions.isEmpty {
-            Button("No sessions running") {}
-                .disabled(true)
-        } else {
-            ForEach(appController.appState.tmuxSessions) { session in
-                sessionMenu(session)
-            }
-        }
-
-        Divider()
-
-        // Presence toggle
-        if appController.settings.detectionMode == .manual {
-            Toggle("Away", isOn: Binding(
-                get: { appController.settings.manualAway },
-                set: { appController.settings.manualAway = $0 }
-            ))
-        } else {
-            Button("Status: \(appController.appState.statusDescription)") {}
-                .disabled(true)
-        }
-
-        Divider()
-
-        Button("Settings...") {
-            openWindow(id: "settings")
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        .keyboardShortcut(",")
-
-        Button("Quit") {
-            NSApplication.shared.terminate(nil)
-        }
-        .keyboardShortcut("q")
-    }
-
-    private func sessionMenu(_ session: AppState.TmuxSession) -> some View {
-        Menu {
-            Button("Open in App") {
-                appController.selectedSessionId = session.name
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
-            }
-
-            Button("Copy Attach Command") {
-                appController.tmuxMonitor?.copyAttachCommand(session.name)
-            }
-
-            Divider()
-
-            Button("Kill Session") {
-                Task { await appController.tmuxMonitor?.killSession(session.name) }
-            }
-        } label: {
-            Text(sessionLabel(session))
-        }
-    }
-
-    private func sessionLabel(_ session: AppState.TmuxSession) -> String {
-        let name = session.displayName
-        let state = session.state.displayName
-        return "\(stateEmoji(session.state)) \(name) — \(state)"
-    }
-
-    private func stateEmoji(_ state: TmuxService.PaneState) -> String {
-        switch state {
-        case .active: return "🔵"
-        case .waitingForInput: return "🟠"
-        case .idle: return "⚪"
-        case .unknown: return "⚫"
-        }
     }
 }
 
