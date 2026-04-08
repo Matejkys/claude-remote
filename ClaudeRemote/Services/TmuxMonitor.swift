@@ -2,15 +2,17 @@ import Foundation
 import AppKit
 
 // Periodically scans for tmux sessions matching the claude-* prefix.
-// Updates AppState with the list of active sessions.
-// Provides actions to kill sessions or copy attach commands to clipboard.
+// Uses TmuxService for all tmux operations with proper error handling.
+// Provides session management actions (kill, rename, send input).
 @MainActor
 final class TmuxMonitor {
     private let appState: AppState
+    let tmuxService: TmuxService
     private var pollingTimer: Timer?
 
-    init(appState: AppState) {
+    init(appState: AppState, tmuxService: TmuxService) {
         self.appState = appState
+        self.tmuxService = tmuxService
     }
 
     // MARK: - Lifecycle
@@ -44,83 +46,70 @@ final class TmuxMonitor {
     // MARK: - Scan
 
     private func scanSessions() async -> [AppState.TmuxSession] {
-        let output = await shell(Constants.tmuxPath, "list-sessions", "-F", "#{session_name}\t#{session_windows}\t#{session_created_string}")
-        guard !output.isEmpty else { return [] }
+        let sessionInfos = await tmuxService.listSessions(prefix: Constants.tmuxSessionPrefix)
+        guard !sessionInfos.isEmpty else { return [] }
 
-        let sessions = output
-            .components(separatedBy: "\n")
-            .filter { !$0.isEmpty && $0.hasPrefix(Constants.tmuxSessionPrefix) }
-            .map { line -> (name: String, windows: Int, created: String) in
-                let parts = line.components(separatedBy: "\t")
-                let name = parts.first ?? ""
-                let windows = parts.count > 1 ? Int(parts[1]) ?? 1 : 1
-                let created = parts.count > 2 ? parts[2] : ""
-                return (name: name, windows: windows, created: created)
-            }
-
-        // Resolve project names from first pane's working directory
         var results: [AppState.TmuxSession] = []
-        for session in sessions {
-            let projectName = await getSessionProjectName(session.name)
+
+        for info in sessionInfos {
+            let projectName = await tmuxService.resolveProjectName(session: info.name)
+            let state = await tmuxService.detectSessionState(session: info.name)
+            let panes = await tmuxService.listPanes(session: info.name)
+
             results.append(AppState.TmuxSession(
-                name: session.name,
-                windows: session.windows,
-                created: session.created,
-                projectName: projectName
+                name: info.name,
+                windows: info.windows,
+                createdAt: info.createdAt,
+                lastActivity: info.lastActivity,
+                projectName: projectName,
+                state: state,
+                panes: panes
             ))
         }
-        return results
-    }
 
-    /// Gets the project name from the first pane's working directory in a session
-    private func getSessionProjectName(_ sessionName: String) async -> String? {
-        let output = await shell(Constants.tmuxPath, "list-panes", "-t", sessionName, "-F", "#{pane_current_path}")
-        guard !output.isEmpty else { return nil }
-        // Take the first pane's path
-        let path = output.components(separatedBy: "\n").first ?? ""
-        guard !path.isEmpty, path.hasPrefix("/") else { return nil }
-        return path.components(separatedBy: "/").last
+        return results
     }
 
     // MARK: - Actions
 
-    /// Kills a tmux session by name
-    func killSession(_ name: String) {
-        Task {
-            _ = await shell(Constants.tmuxPath, "kill-session", "-t", name)
+    /// Kills a tmux session by name. Reports success/failure to UI.
+    func killSession(_ name: String) async {
+        let result = await tmuxService.killSession(name)
+        switch result {
+        case .success:
+            appState.showSuccess("Session '\(name)' killed")
             refresh()
+        case .failure(let error):
+            appState.showError("Failed to kill '\(name)': \(error)")
+        }
+    }
+
+    /// Renames a tmux session. Reports success/failure to UI.
+    func renameSession(_ name: String, to newName: String) async {
+        let result = await tmuxService.renameSession(name, to: newName)
+        switch result {
+        case .success:
+            appState.showSuccess("Session renamed to '\(newName)'")
+            refresh()
+        case .failure(let error):
+            appState.showError("Failed to rename: \(error)")
+        }
+    }
+
+    /// Sends input to a pane. Reports success/failure to UI.
+    func sendInput(paneId: String, text: String) async {
+        let result = await tmuxService.sendKeys(paneId: paneId, text: text)
+        switch result {
+        case .success:
+            appState.showSuccess("Input sent")
+        case .failure(let error):
+            appState.showError("Failed to send input: \(error)")
         }
     }
 
     /// Copies the tmux attach command to the system clipboard
     func copyAttachCommand(_ name: String) {
-        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let command = "tmux attach-session -t \(cleanName)"
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(command, forType: .string)
-    }
-
-    // MARK: - Shell Helper
-
-    private func shell(_ command: String, _ arguments: String...) async -> String {
-        await withCheckedContinuation { continuation in
-            let process = Process()
-            let pipe = Pipe()
-
-            process.executableURL = URL(fileURLWithPath: command)
-            process.arguments = arguments
-            process.standardOutput = pipe
-            process.standardError = FileHandle.nullDevice
-
-            do {
-                try process.run()
-                process.waitUntilExit()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                continuation.resume(returning: output)
-            } catch {
-                continuation.resume(returning: "")
-            }
-        }
+        tmuxService.copyAttachCommand(name)
+        appState.showSuccess("Copied attach command")
     }
 }

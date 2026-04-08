@@ -71,7 +71,7 @@ final class HTTPListener {
             listener?.cancel()
             Task {
                 try? await Task.sleep(for: .seconds(2))
-                await self.start()
+                self.start()
             }
         case .cancelled:
             appState.httpListenerRunning = false

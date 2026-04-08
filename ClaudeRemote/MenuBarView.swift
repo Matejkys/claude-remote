@@ -1,38 +1,42 @@
 import SwiftUI
 
 // Main popover view displayed from the menu bar icon.
-// Shows presence status, detection settings, notification preferences,
-// Telegram configuration, and Claude Code / relay status.
+// Uses NavigationStack for session list → detail navigation.
+// Shows presence status, session manager, Telegram config, and app settings.
 struct MenuBarView: View {
     @Bindable var appState: AppState
     @Bindable var settings: Settings
+    var tmuxMonitor: TmuxMonitor?
     var onTestTelegram: () async -> Void
-    var onKillSession: (String) -> Void
-    var onCopyAttach: (String) -> Void
     var onQuit: () -> Void
 
     @State private var botTokenInput = ""
     @State private var userIDInput = ""
     @State private var showTelegramConfig = false
     @State private var isTesting = false
-    @State private var copiedSession: String?
+    @State private var showSettings = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                statusHeader
-                Divider()
-                presenceSection
-                Divider()
-                telegramSection
-                Divider()
-                sessionsSection
-                Divider()
-                claudeCodeSection
-                Divider()
-                footerSection
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    statusHeader
+                    feedbackBanner
+                    Divider()
+                    sessionsSection
+                    Divider()
+                    if showSettings {
+                        presenceSection
+                        Divider()
+                        telegramSection
+                        Divider()
+                        claudeCodeSection
+                        Divider()
+                    }
+                    footerSection
+                }
+                .padding(16)
             }
-            .padding(16)
         }
     }
 
@@ -46,6 +50,110 @@ struct MenuBarView: View {
             Text("Status: \(appState.statusDescription)")
                 .font(.headline)
             Spacer()
+            if appState.activeSessionCount > 0 {
+                Text("\(appState.activeSessionCount) session\(appState.activeSessionCount == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Feedback Banner
+
+    @ViewBuilder
+    private var feedbackBanner: some View {
+        if let error = appState.errorMessage {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                Spacer()
+                Button {
+                    appState.errorMessage = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+            }
+            .padding(8)
+            .background(Color.red.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+
+        if let success = appState.successMessage {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text(success)
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                Spacer()
+            }
+            .padding(8)
+            .background(Color.green.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    // MARK: - Sessions Section
+
+    private var sessionsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Sessions")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if appState.waitingSessionCount > 0 {
+                    Text("\(appState.waitingSessionCount) waiting")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.15))
+                        .clipShape(Capsule())
+                        .foregroundStyle(.orange)
+                }
+                Button {
+                    tmuxMonitor?.refresh()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Refresh sessions")
+            }
+
+            if appState.tmuxSessions.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "circle")
+                        .foregroundStyle(.secondary)
+                    Text("No claude-* sessions running")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+            } else {
+                ForEach(appState.tmuxSessions) { session in
+                    NavigationLink {
+                        if let monitor = tmuxMonitor {
+                            SessionDetailView(session: session, tmuxMonitor: monitor)
+                        }
+                    } label: {
+                        SessionRowView(
+                            session: session,
+                            onCopyAttach: { tmuxMonitor?.copyAttachCommand(session.name) },
+                            onKill: {
+                                Task { await tmuxMonitor?.killSession(session.name) }
+                            }
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
 
@@ -96,7 +204,6 @@ struct MenuBarView: View {
             .toggleStyle(.checkbox)
             .padding(.leading, 4)
     }
-
 
     // MARK: - Telegram
 
@@ -183,85 +290,6 @@ struct MenuBarView: View {
         }
     }
 
-    // MARK: - tmux Sessions
-
-    private var sessionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("tmux Sessions")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            if appState.tmuxSessions.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "circle")
-                        .foregroundStyle(.secondary)
-                    Text("No claude-* sessions running")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-            } else {
-                ForEach(appState.tmuxSessions) { session in
-                    sessionRow(session)
-                }
-            }
-        }
-    }
-
-    private func sessionRow(_ session: AppState.TmuxSession) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 6, height: 6)
-                    Text(session.projectName ?? session.name)
-                        .font(.system(.body, design: .monospaced))
-                }
-                HStack(spacing: 4) {
-                    Text(session.name)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("·")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("\(session.windows) window(s)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            Button {
-                onCopyAttach(session.name)
-                copiedSession = session.name
-                Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    if copiedSession == session.name {
-                        copiedSession = nil
-                    }
-                }
-            } label: {
-                if copiedSession == session.name {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(.green)
-                } else {
-                    Image(systemName: "doc.on.doc")
-                }
-            }
-            .buttonStyle(.borderless)
-            .help("Copy attach command")
-
-            Button {
-                onKillSession(session.name)
-            } label: {
-                Image(systemName: "xmark.circle")
-                    .foregroundStyle(.red)
-            }
-            .buttonStyle(.borderless)
-            .help("Kill session")
-        }
-        .padding(.vertical, 2)
-    }
-
     // MARK: - Claude Code Status
 
     private var claudeCodeSection: some View {
@@ -292,8 +320,19 @@ struct MenuBarView: View {
 
     private var footerSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Toggle("Launch at login", isOn: $settings.launchAtLogin)
-                .toggleStyle(.checkbox)
+            HStack {
+                Button {
+                    showSettings.toggle()
+                } label: {
+                    Label(showSettings ? "Hide Settings" : "Settings...", systemImage: "gear")
+                }
+                .buttonStyle(.link)
+
+                Spacer()
+
+                Toggle("Launch at login", isOn: $settings.launchAtLogin)
+                    .toggleStyle(.checkbox)
+            }
 
             Button("Quit Claude Remote") {
                 onQuit()

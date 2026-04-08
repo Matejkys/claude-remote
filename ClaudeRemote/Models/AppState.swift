@@ -66,10 +66,25 @@ final class AppState {
 
     struct TmuxSession: Identifiable, Equatable {
         var id: String { name }
-        let name: String
+        var name: String
         let windows: Int
-        let created: String
-        let projectName: String?
+        let createdAt: Date
+        let lastActivity: Date
+        var projectName: String?
+        var state: TmuxService.PaneState
+        var panes: [TmuxService.PaneInfo]
+
+        /// Display name: project name if available, otherwise session name
+        var displayName: String {
+            projectName ?? name
+        }
+
+        /// Formatted creation time
+        var createdFormatted: String {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .abbreviated
+            return formatter.localizedString(for: createdAt, relativeTo: Date())
+        }
     }
 
     var tmuxSessions: [TmuxSession] = []
@@ -77,6 +92,35 @@ final class AppState {
     // MARK: - HTTP Listener Status
 
     var httpListenerRunning = false
+
+    // MARK: - User Feedback
+
+    /// Transient success message shown in the UI, auto-clears
+    var successMessage: String?
+    /// Transient error message shown in the UI, auto-clears
+    var errorMessage: String?
+
+    /// Shows a success message that auto-clears after a delay
+    func showSuccess(_ message: String) {
+        successMessage = message
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if successMessage == message {
+                successMessage = nil
+            }
+        }
+    }
+
+    /// Shows an error message that auto-clears after a delay
+    func showError(_ message: String) {
+        errorMessage = message
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            if errorMessage == message {
+                errorMessage = nil
+            }
+        }
+    }
 
     // MARK: - Initialization
 
@@ -88,7 +132,7 @@ final class AppState {
 
     /// SF Symbol name for the menu bar icon based on current presence state
     var menuBarIconName: String {
-        isAway ? "circle.dotted.circle.fill" : "circle.dotted.circle.fill"
+        "circle.dotted.circle.fill"
     }
 
     /// Tint color name for the menu bar icon
@@ -99,5 +143,17 @@ final class AppState {
     /// Status description shown at the top of the popover
     var statusDescription: String {
         isAway ? "Away" : "At computer"
+    }
+
+    // MARK: - Session Helpers
+
+    /// Number of sessions waiting for input
+    var waitingSessionCount: Int {
+        tmuxSessions.filter { $0.state.isWaiting }.count
+    }
+
+    /// Total active session count
+    var activeSessionCount: Int {
+        tmuxSessions.count
     }
 }

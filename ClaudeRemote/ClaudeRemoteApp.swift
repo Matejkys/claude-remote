@@ -13,20 +13,27 @@ struct ClaudeRemoteApp: App {
             MenuBarView(
                 appState: appController.appState,
                 settings: appController.settings,
+                tmuxMonitor: appController.tmuxMonitor,
                 onTestTelegram: { await appController.testTelegramConnection() },
-                onKillSession: { name in appController.tmuxMonitor?.killSession(name) },
-                onCopyAttach: { name in appController.tmuxMonitor?.copyAttachCommand(name) },
                 onQuit: { NSApplication.shared.terminate(nil) }
             )
-            .frame(width: 320)
+            .frame(width: 360)
             .task {
                 await appController.startServices()
             }
         } label: {
-            Image(systemName: "circle.dotted.circle.fill")
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(appController.appState.isAway ? .orange : .green)
-                .font(.system(size: 16))
+            HStack(spacing: 2) {
+                Image(systemName: "circle.dotted.circle.fill")
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(appController.appState.isAway ? .orange : .green)
+                    .font(.system(size: 16))
+
+                if appController.appState.waitingSessionCount > 0 {
+                    Text("\(appController.appState.waitingSessionCount)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.orange)
+                }
+            }
         }
         .menuBarExtraStyle(.window)
         .onChange(of: appController.settings.launchAtLogin) { _, newValue in
@@ -42,6 +49,7 @@ struct ClaudeRemoteApp: App {
 final class AppController {
     let settings = Settings()
     let appState: AppState
+    let tmuxService = TmuxService()
 
     private var presenceDetector: PresenceDetector?
     private var telegramService: TelegramService?
@@ -69,7 +77,7 @@ final class AppController {
         )
 
         let telegram = TelegramService(settings: settings)
-        let notifier = LocalNotifier()
+        let notifier = LocalNotifier(tmuxService: tmuxService)
         let router = NotificationRouter(
             appState: appState,
             settings: settings,
@@ -78,7 +86,7 @@ final class AppController {
         )
         let listener = HTTPListener(appState: appState, settings: settings, router: router)
         let detector = PresenceDetector(appState: appState, settings: settings)
-        let tmux = TmuxMonitor(appState: appState)
+        let tmux = TmuxMonitor(appState: appState, tmuxService: tmuxService)
 
         self.telegramService = telegram
         self.localNotifier = notifier
