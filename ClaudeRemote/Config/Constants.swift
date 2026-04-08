@@ -30,7 +30,7 @@ enum Constants {
     // MARK: - tmux
     /// Default tmux session name where Claude Code runs
     static let defaultTmuxSessionName = "claude"
-    /// Prefix for tmux session names created by cy() function
+    /// Prefix for tmux session names created by ca() function
     static let tmuxSessionPrefix = "claude-"
     /// Interval in seconds between tmux session list refreshes
     static let tmuxPollingIntervalSeconds: TimeInterval = 5

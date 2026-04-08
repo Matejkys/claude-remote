@@ -242,7 +242,7 @@ bot.command("prompt", async (ctx) => {
 
   if (allPanes.length === 0) {
     await ctx.reply(
-      "No claude-* tmux sessions found. Start one with 'cy'."
+      "No claude-* tmux sessions found. Start one with 'ca'."
     );
     return;
   }
@@ -286,7 +286,7 @@ bot.command("status", async (ctx) => {
 
   if (allPanes.length === 0) {
     await ctx.reply(
-      `No claude-* tmux sessions found. Start one with 'cy'.`
+      `No claude-* tmux sessions found. Start one with 'ca'.`
     );
     return;
   }
@@ -330,7 +330,7 @@ bot.command("screenshot", async (ctx) => {
 
   if (allPanes.length === 0) {
     await ctx.reply(
-      `No claude-* tmux sessions found. Start one with 'cy'.`
+      `No claude-* tmux sessions found. Start one with 'ca'.`
     );
     return;
   }
@@ -476,7 +476,7 @@ bot.on("message:text", async (ctx) => {
 
     if (allPanes.length === 0) {
       await ctx.reply(
-        "No claude-* tmux sessions found. Start one with 'cy'."
+        "No claude-* tmux sessions found. Start one with 'ca'."
       );
       return;
     }
@@ -542,7 +542,7 @@ async function start(): Promise<void> {
       const statusText =
         sessions.length > 0
           ? `Found ${sessions.length} session(s): ${sessions.map((s) => s.name).join(", ")}`
-          : `No claude-* sessions found yet. Start one with 'cy'.`;
+          : `No claude-* sessions found yet. Start one with 'ca'.`;
 
       await sendMessage(
         `<b>Claude Remote Relay started</b>\n${escapeHtml(statusText)}\n\nReady to relay commands.`

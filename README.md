@@ -134,7 +134,7 @@ Add to `~/.claude/settings.json` (or the app does this automatically):
 Add to your `~/.zshrc`:
 
 ```bash
-cy() {
+ca() {
   case "${1:-}" in
     attach)
       local latest
@@ -142,7 +142,7 @@ cy() {
       if [[ -n "$latest" ]]; then
         tmux attach-session -t "$latest"
       else
-        echo "No claude-* sessions found. Run 'cy' to create one."
+        echo "No claude-* sessions found. Run 'ca' to create one."
       fi
       ;;
     list)
@@ -150,7 +150,7 @@ cy() {
       ;;
     *)
       local session="claude-$(date +%H%M%S)"
-      tmux new-session -s "$session" -- claude --chrome --dangerously-skip-permissions
+      tmux new-session -s "$session" -- claude --chrome --permission-mode auto
       ;;
   esac
 }
@@ -179,9 +179,9 @@ This will clean build, install to `/Applications`, and automatically set up keyc
 ### Starting a session
 
 ```bash
-cy              # Create a new Claude Code tmux session
-cy attach       # Attach to the most recent session
-cy list         # List all active sessions
+ca              # Create a new Claude Code tmux session
+ca attach       # Attach to the most recent session
+ca list         # List all active sessions
 ```
 
 ### Menu bar app
