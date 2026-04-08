@@ -1,7 +1,7 @@
 import SwiftUI
 
-// Detail view for a single tmux session.
-// Shows terminal preview, session info, input field, and management actions.
+// Detail panel for a single tmux session shown in the main window's detail area.
+// Shows terminal preview, input field, quick actions, and session management.
 struct SessionDetailView: View {
     let session: AppState.TmuxSession
     let tmuxMonitor: TmuxMonitor
@@ -14,26 +14,24 @@ struct SessionDetailView: View {
     @State private var refreshTimer: Timer?
     @State private var isRefreshing = false
 
-    @Environment(\.dismiss) private var dismiss
-
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                headerSection
-                Divider()
-                terminalPreview
-                Divider()
-                inputSection
-                Divider()
-                quickActions
-                Divider()
-                sessionInfoSection
-                Divider()
-                managementActions
+        VStack(spacing: 0) {
+            // Header toolbar
+            headerBar
+
+            Divider()
+
+            // Main content
+            HSplitView {
+                // Terminal preview (left/main area)
+                terminalArea
+                    .frame(minWidth: 300)
+
+                // Side panel with actions and info
+                sidePanel
+                    .frame(width: 220)
             }
-            .padding(16)
         }
-        .frame(width: 420, height: 600)
         .task {
             await refreshTerminal()
             startAutoRefresh()
@@ -41,56 +39,86 @@ struct SessionDetailView: View {
         .onDisappear {
             stopAutoRefresh()
         }
+        .onChange(of: session.name) { _, _ in
+            // Refresh when switching sessions
+            Task { await refreshTerminal() }
+        }
         .alert("Kill Session", isPresented: $showKillConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Kill", role: .destructive) {
-                Task {
-                    await tmuxMonitor.killSession(session.name)
-                    dismiss()
-                }
+                Task { await tmuxMonitor.killSession(session.name) }
             }
         } message: {
-            Text("Kill session '\(session.displayName)'? This will terminate Claude Code running in it.")
+            Text("Kill session '\(session.displayName)'?\nThis will terminate Claude Code running in it.")
         }
     }
 
     // MARK: - Header
 
-    private var headerSection: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                if isRenaming {
-                    HStack {
-                        TextField("Session name", text: $renameText)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(maxWidth: 200)
-                            .onSubmit { submitRename() }
+    private var headerBar: some View {
+        HStack(spacing: 12) {
+            if isRenaming {
+                TextField("Session name", text: $renameText)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.title3, design: .monospaced))
+                    .frame(maxWidth: 250)
+                    .onSubmit { submitRename() }
 
-                        Button("Save") { submitRename() }
-                            .disabled(renameText.isEmpty || renameText == session.name)
+                Button("Save") { submitRename() }
+                    .disabled(renameText.isEmpty || renameText == session.name)
+                Button("Cancel") { isRenaming = false }
+            } else {
+                Text(session.displayName)
+                    .font(.title3.bold())
 
-                        Button("Cancel") { isRenaming = false }
-                    }
-                } else {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(stateColor)
-                            .frame(width: 10, height: 10)
-                        Text(session.displayName)
-                            .font(.headline)
-                        Text(session.state.displayName)
-                            .font(.caption)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(stateColor.opacity(0.15))
-                            .clipShape(Capsule())
-                            .foregroundStyle(stateColor)
-                    }
+                stateLabel
+
+                if session.projectName != nil {
+                    Text(session.name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
+
             Spacer()
+
+            // Header actions
+            Button {
+                renameText = session.name
+                isRenaming = true
+            } label: {
+                Image(systemName: "pencil")
+            }
+            .help("Rename session")
+
+            Button {
+                tmuxMonitor.copyAttachCommand(session.name)
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .help("Copy attach command")
+
+            Button {
+                showKillConfirmation = true
+            } label: {
+                Image(systemName: "xmark.circle")
+                    .foregroundStyle(.red)
+            }
+            .help("Kill session")
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
+    }
+
+    private var stateLabel: some View {
+        Text(session.state.displayName)
+            .font(.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(stateColor.opacity(0.15))
+            .clipShape(Capsule())
+            .foregroundStyle(stateColor)
     }
 
     private var stateColor: Color {
@@ -102,56 +130,51 @@ struct SessionDetailView: View {
         }
     }
 
-    // MARK: - Terminal Preview
+    // MARK: - Terminal Area
 
-    private var terminalPreview: some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private var terminalArea: some View {
+        VStack(spacing: 0) {
+            // Terminal header
             HStack {
                 Text("Terminal")
-                    .font(.subheadline)
+                    .font(.subheadline.bold())
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button {
                     Task { await refreshTerminal() }
                 } label: {
-                    Image(systemName: isRefreshing ? "arrow.clockwise" : "arrow.clockwise")
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                        .animation(isRefreshing ? .linear(duration: 0.5).repeatForever(autoreverses: false) : .default, value: isRefreshing)
                 }
                 .buttonStyle(.borderless)
-                .help("Refresh terminal")
+                .help("Refresh")
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
 
-            ScrollView(.vertical) {
+            // Terminal content
+            ScrollView {
                 ScrollViewReader { proxy in
                     Text(terminalContent.isEmpty ? "Loading..." : terminalContent)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Color(nsColor: .init(red: 0.83, green: 0.83, blue: 0.83, alpha: 1)))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
-                        .id("terminal-bottom")
+                        .padding(12)
+                        .textSelection(.enabled)
+                        .id("terminal-end")
                         .onChange(of: terminalContent) { _, _ in
-                            proxy.scrollTo("terminal-bottom", anchor: .bottom)
+                            proxy.scrollTo("terminal-end", anchor: .bottom)
                         }
                 }
             }
-            .frame(height: 200)
             .background(Color(nsColor: .init(red: 0.12, green: 0.12, blue: 0.12, alpha: 1)))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-    }
 
-    // MARK: - Input Section
+            Divider()
 
-    private var inputSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Send Input")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            HStack {
-                TextField("Type a message...", text: $inputText)
+            // Input area
+            HStack(spacing: 8) {
+                TextField("Send input to session...", text: $inputText)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
                     .onSubmit { sendInput() }
@@ -160,33 +183,46 @@ struct SessionDetailView: View {
                     .disabled(inputText.isEmpty || session.panes.isEmpty)
                     .keyboardShortcut(.return, modifiers: .command)
             }
+            .padding(10)
         }
+    }
+
+    // MARK: - Side Panel
+
+    private var sidePanel: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                quickActionsSection
+                Divider()
+                sessionInfoSection
+            }
+            .padding(12)
+        }
+        .background(.background.secondary)
     }
 
     // MARK: - Quick Actions
 
-    private var quickActions: some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private var quickActionsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Quick Actions")
-                .font(.subheadline)
+                .font(.subheadline.bold())
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 8) {
-                quickActionButton(label: "Approve (y)", text: "y", color: .green)
-                quickActionButton(label: "Deny (n)", text: "n", color: .red)
-                quickActionButton(label: "Yes", text: "yes", color: .green)
-                quickActionButton(label: "No", text: "no", color: .red)
+            HStack(spacing: 6) {
+                quickButton(label: "Approve", text: "y", color: .green)
+                quickButton(label: "Deny", text: "n", color: .red)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 ForEach(1...5, id: \.self) { i in
-                    quickActionButton(label: "\(i)", text: "\(i)", color: .blue)
+                    quickButton(label: "\(i)", text: "\(i)", color: .blue)
                 }
             }
         }
     }
 
-    private func quickActionButton(label: String, text: String, color: Color) -> some View {
+    private func quickButton(label: String, text: String, color: Color) -> some View {
         Button(label) {
             Task {
                 guard let pane = session.panes.first else { return }
@@ -204,66 +240,34 @@ struct SessionDetailView: View {
     // MARK: - Session Info
 
     private var sessionInfoSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Session Info")
-                .font(.subheadline)
+                .font(.subheadline.bold())
                 .foregroundStyle(.secondary)
 
-            infoRow(label: "Session", value: session.name)
+            infoRow("Session", session.name)
             if let project = session.projectName {
-                infoRow(label: "Project", value: project)
+                infoRow("Project", project)
             }
-            infoRow(label: "Windows", value: "\(session.windows)")
-            infoRow(label: "Panes", value: "\(session.panes.count)")
-            infoRow(label: "Created", value: session.createdFormatted)
+            infoRow("Windows", "\(session.windows)")
+            infoRow("Panes", "\(session.panes.count)")
+            infoRow("Created", session.createdFormatted)
             if let firstPane = session.panes.first, !firstPane.currentPath.isEmpty {
-                infoRow(label: "Working Dir", value: firstPane.currentPath)
+                infoRow("Path", firstPane.currentPath)
             }
         }
     }
 
-    private func infoRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label + ":")
-                .foregroundStyle(.secondary)
-                .frame(width: 80, alignment: .trailing)
+    private func infoRow(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
             Text(value)
-                .font(.system(.body, design: .monospaced))
+                .font(.system(.caption, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Spacer()
-        }
-        .font(.caption)
-    }
-
-    // MARK: - Management Actions
-
-    private var managementActions: some View {
-        HStack(spacing: 12) {
-            Button {
-                renameText = session.name
-                isRenaming = true
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-            .buttonStyle(.bordered)
-
-            Button {
-                tmuxMonitor.copyAttachCommand(session.name)
-            } label: {
-                Label("Copy Attach", systemImage: "doc.on.doc")
-            }
-            .buttonStyle(.bordered)
-
-            Spacer()
-
-            Button {
-                showKillConfirmation = true
-            } label: {
-                Label("Kill Session", systemImage: "xmark.circle")
-            }
-            .buttonStyle(.bordered)
-            .tint(.red)
+                .textSelection(.enabled)
         }
     }
 
@@ -297,9 +301,7 @@ struct SessionDetailView: View {
         }
         let newName = renameText
         isRenaming = false
-        Task {
-            await tmuxMonitor.renameSession(session.name, to: newName)
-        }
+        Task { await tmuxMonitor.renameSession(session.name, to: newName) }
     }
 
     private func startAutoRefresh() {

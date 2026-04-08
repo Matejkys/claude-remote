@@ -64,7 +64,7 @@ final class AppState {
 
     // MARK: - tmux Sessions
 
-    struct TmuxSession: Identifiable, Equatable {
+    struct TmuxSession: Identifiable, Equatable, Hashable {
         var id: String { name }
         var name: String
         let windows: Int

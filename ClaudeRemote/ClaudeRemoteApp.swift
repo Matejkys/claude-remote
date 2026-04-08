@@ -3,47 +3,144 @@ import ServiceManagement
 
 // ClaudeRemote - macOS menu bar app that routes Claude Code notifications
 // locally (when at computer) or to Telegram (when away).
-// Runs as a menu bar-only app (LSUIElement = true, no Dock icon).
+// Architecture: compact menu bar dropdown + standalone app window for full management.
 @main
 struct ClaudeRemoteApp: App {
     @State private var appController = AppController()
 
     var body: some Scene {
+        // Compact menu bar dropdown (OrbStack-style)
         MenuBarExtra {
-            MenuBarView(
-                appState: appController.appState,
-                settings: appController.settings,
-                tmuxMonitor: appController.tmuxMonitor,
-                onTestTelegram: { await appController.testTelegramConnection() },
-                onQuit: { NSApplication.shared.terminate(nil) }
-            )
-            .frame(width: 360)
-            .task {
-                await appController.startServices()
-            }
+            MenuBarMenu(appController: appController)
+                .task {
+                    await appController.startServices()
+                }
         } label: {
             HStack(spacing: 2) {
                 Image(systemName: "circle.dotted.circle.fill")
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(appController.appState.isAway ? .orange : .green)
                     .font(.system(size: 16))
-
-                if appController.appState.waitingSessionCount > 0 {
-                    Text("\(appController.appState.waitingSessionCount)")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.orange)
-                }
             }
         }
-        .menuBarExtraStyle(.window)
-        .onChange(of: appController.settings.launchAtLogin) { _, newValue in
-            appController.updateLaunchAtLogin(enabled: newValue)
+        .menuBarExtraStyle(.menu)
+
+        // Full app window opened on demand
+        Window("Claude Remote", id: "main") {
+            MainWindowView(appController: appController)
+        }
+        .defaultSize(width: 900, height: 600)
+        .windowResizability(.contentMinSize)
+
+        // Settings window
+        Window("Settings", id: "settings") {
+            SettingsView(
+                appState: appController.appState,
+                settings: appController.settings,
+                onTestTelegram: { await appController.testTelegramConnection() }
+            )
+        }
+        .defaultSize(width: 400, height: 500)
+        .windowResizability(.contentSize)
+    }
+}
+
+// MARK: - Menu Bar Dropdown
+
+/// Compact menu with session list, quick actions, and app controls.
+/// Uses .menu style which only supports Button/Toggle/Divider/Menu.
+struct MenuBarMenu: View {
+    let appController: AppController
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        // Open main app window
+        Button("Open Claude Remote") {
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        .keyboardShortcut("n")
+
+        Divider()
+
+        // Session list
+        if appController.appState.tmuxSessions.isEmpty {
+            Button("No sessions running") {}
+                .disabled(true)
+        } else {
+            ForEach(appController.appState.tmuxSessions) { session in
+                sessionMenu(session)
+            }
+        }
+
+        Divider()
+
+        // Presence toggle
+        if appController.settings.detectionMode == .manual {
+            Toggle("Away", isOn: Binding(
+                get: { appController.settings.manualAway },
+                set: { appController.settings.manualAway = $0 }
+            ))
+        } else {
+            Button("Status: \(appController.appState.statusDescription)") {}
+                .disabled(true)
+        }
+
+        Divider()
+
+        Button("Settings...") {
+            openWindow(id: "settings")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        .keyboardShortcut(",")
+
+        Button("Quit") {
+            NSApplication.shared.terminate(nil)
+        }
+        .keyboardShortcut("q")
+    }
+
+    private func sessionMenu(_ session: AppState.TmuxSession) -> some View {
+        Menu {
+            Button("Open in App") {
+                appController.selectedSessionId = session.name
+                openWindow(id: "main")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+
+            Button("Copy Attach Command") {
+                appController.tmuxMonitor?.copyAttachCommand(session.name)
+            }
+
+            Divider()
+
+            Button("Kill Session") {
+                Task { await appController.tmuxMonitor?.killSession(session.name) }
+            }
+        } label: {
+            Text(sessionLabel(session))
+        }
+    }
+
+    private func sessionLabel(_ session: AppState.TmuxSession) -> String {
+        let name = session.displayName
+        let state = session.state.displayName
+        return "\(stateEmoji(session.state)) \(name) — \(state)"
+    }
+
+    private func stateEmoji(_ state: TmuxService.PaneState) -> String {
+        switch state {
+        case .active: return "🔵"
+        case .waitingForInput: return "🟠"
+        case .idle: return "⚪"
+        case .unknown: return "⚫"
         }
     }
 }
 
-// Holds all services and manages their lifecycle.
-// Separated from App struct because Scene doesn't support .task directly.
+// MARK: - App Controller
+
+/// Holds all services and manages their lifecycle.
 @MainActor
 @Observable
 final class AppController {
@@ -60,6 +157,9 @@ final class AppController {
     private var servicesStarted = false
     private var backgroundActivity: NSObjectProtocol?
 
+    /// Selected session ID for navigation in main window
+    var selectedSessionId: String?
+
     init() {
         self.appState = AppState(settings: settings)
     }
@@ -68,9 +168,6 @@ final class AppController {
         guard !servicesStarted else { return }
         servicesStarted = true
 
-        // Prevent App Nap - LSUIElement apps get aggressively napped by macOS,
-        // which suspends URLSession requests (Telegram API) and delays MainActor tasks.
-        // This is critical for Away mode where we MUST send Telegram notifications promptly.
         backgroundActivity = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiatedAllowingIdleSystemSleep, .suddenTerminationDisabled],
             reason: "Listening for Claude Code notifications and routing to Telegram"

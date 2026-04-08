@@ -390,7 +390,7 @@ extension TmuxService {
         let lastActivity: Date
     }
 
-    struct PaneInfo: Equatable {
+    struct PaneInfo: Equatable, Hashable {
         let paneId: String
         let currentPath: String
         let isActive: Bool
@@ -402,7 +402,7 @@ extension TmuxService {
         var errorDescription: String? { message }
     }
 
-    enum PaneState: Equatable {
+    enum PaneState: Equatable, Hashable {
         case active
         case waitingForInput(matchedPattern: String)
         case idle(matchedPattern: String)
