@@ -45,13 +45,15 @@ When you're at your Mac, you get native macOS notifications with working Approve
 
 ### Notification Routing
 - **Approve/Deny buttons** on macOS notifications actually send responses to Claude Code
-- **Telegram forwarding** with terminal context when away
+- **Telegram forwarding** with markdown-to-HTML conversion for properly formatted messages
+- **Duplicate suppression** — "waiting for input" notifications are suppressed after a "finished" event
 - **Presence-based routing** — automatic or manual mode
 
 ### Remote Control (Telegram)
 - Approve/deny permissions, answer questions, send prompts
 - View terminal output and screenshots
 - Multi-session support with pane disambiguation
+- Claude's markdown output rendered as formatted Telegram HTML (bold, italic, code, code blocks)
 
 ## Prerequisites
 

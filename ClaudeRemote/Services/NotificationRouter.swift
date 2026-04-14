@@ -2,12 +2,18 @@ import Foundation
 
 // Routes incoming CC notifications to the appropriate delivery channel
 // based on the user's current presence state and notification preferences.
+// Suppresses redundant "waiting for input" notifications that arrive
+// immediately after a "Stop" event from the same pane.
 @MainActor
 final class NotificationRouter {
     private let appState: AppState
     private let settings: Settings
     private let telegramService: TelegramService
     private let localNotifier: LocalNotifier
+
+    // Tracks recent Stop events per pane to suppress duplicate "waiting" notifications
+    private var recentStopTimestamps: [String: Date] = [:]
+    private let suppressionWindowSeconds: TimeInterval = 10
 
     init(appState: AppState, settings: Settings, telegramService: TelegramService, localNotifier: LocalNotifier) {
         self.appState = appState
@@ -28,6 +34,26 @@ final class NotificationRouter {
         print("  - manualAway: \(manualAway)")
         print("  - eventCategory: \(payload.eventCategory)")
         print("  - title: \(payload.title ?? "nil")")
+
+        let paneKey = payload.tmuxPane ?? "default"
+
+        // Track Stop events for deduplication
+        if payload.eventCategory == .stop {
+            recentStopTimestamps[paneKey] = Date()
+        }
+
+        // Suppress Notification events that arrive shortly after a Stop on the same pane
+        if payload.eventCategory != .stop, let lastStop = recentStopTimestamps[paneKey] {
+            let elapsed = Date().timeIntervalSince(lastStop)
+            if elapsed < suppressionWindowSeconds {
+                print("[NotificationRouter] Suppressing notification - Stop event was \(String(format: "%.1f", elapsed))s ago on pane \(paneKey)")
+                return
+            }
+        }
+
+        // Clean up old timestamps
+        let now = Date()
+        recentStopTimestamps = recentStopTimestamps.filter { now.timeIntervalSince($0.value) < suppressionWindowSeconds }
 
         if isAway {
             print("[NotificationRouter] User is AWAY - routing to Telegram")
