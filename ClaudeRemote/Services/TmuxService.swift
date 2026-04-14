@@ -121,11 +121,15 @@ final class TmuxService {
 
     // MARK: - Session Operations
 
+    /// Separator used in tmux format strings - must not appear in session names
+    private static let fieldSeparator = "|||"
+
     /// Lists all tmux sessions with structured data
     func listSessions() async -> [SessionInfo] {
+        let sep = Self.fieldSeparator
         let result = await run(
             "list-sessions", "-F",
-            "#{session_name}\t#{session_windows}\t#{session_created}\t#{session_activity}"
+            "#{session_name}\(sep)#{session_windows}\(sep)#{session_created}\(sep)#{session_activity}"
         )
         guard result.succeeded, !result.output.isEmpty else { return [] }
 
@@ -133,7 +137,7 @@ final class TmuxService {
             .components(separatedBy: "\n")
             .filter { !$0.isEmpty }
             .compactMap { line -> SessionInfo? in
-                let parts = line.components(separatedBy: "\t")
+                let parts = line.components(separatedBy: sep)
                 guard let name = parts.first, !name.isEmpty else { return nil }
                 let windows = parts.count > 1 ? Int(parts[1]) ?? 1 : 1
                 let created = parts.count > 2 ? TimeInterval(parts[2]) ?? 0 : 0
@@ -210,9 +214,10 @@ final class TmuxService {
 
     /// Lists all pane IDs for a session
     func listPanes(session: String) async -> [PaneInfo] {
+        let sep = Self.fieldSeparator
         let result = await run(
             "list-panes", "-t", session, "-F",
-            "#{pane_id}\t#{pane_current_path}\t#{pane_active}"
+            "#{pane_id}\(sep)#{pane_current_path}\(sep)#{pane_active}"
         )
         guard result.succeeded, !result.output.isEmpty else { return [] }
 
@@ -220,7 +225,7 @@ final class TmuxService {
             .components(separatedBy: "\n")
             .filter { !$0.isEmpty }
             .compactMap { line -> PaneInfo? in
-                let parts = line.components(separatedBy: "\t")
+                let parts = line.components(separatedBy: sep)
                 guard let paneId = parts.first, !paneId.isEmpty else { return nil }
                 let path = parts.count > 1 ? parts[1] : ""
                 let isActive = parts.count > 2 ? parts[2] == "1" : false

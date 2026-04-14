@@ -141,7 +141,9 @@ final class TelegramService {
     // MARK: - Message Formatting
 
     /// Formats a NotificationPayload into a human-readable Telegram message
-    /// with appropriate emoji and structure based on event category.
+    /// with appropriate structure based on event category.
+    /// Terminal context is only included for permission requests where it's actionable.
+    /// Claude's markdown in messages is converted to Telegram-compatible HTML.
     private func formatMessage(payload: NotificationPayload) -> String {
         var parts: [String] = []
 
@@ -153,8 +155,9 @@ final class TelegramService {
                 parts.append(escapeHTML(title))
             }
             if let message = payload.message {
-                parts.append(escapeHTML(message))
+                parts.append(markdownToTelegramHTML(message))
             }
+            // Terminal context is useful for permission requests to see what's being asked
             if let context = payload.terminalContext, !context.isEmpty {
                 parts.append("")
                 parts.append("<pre>")
@@ -171,13 +174,7 @@ final class TelegramService {
                 parts.append(escapeHTML(title))
             }
             if let message = payload.message {
-                parts.append(escapeHTML(message))
-            }
-            if let context = payload.terminalContext, !context.isEmpty {
-                parts.append("")
-                parts.append("<pre>")
-                parts.append(escapeHTML(trimmedContext(context)))
-                parts.append("</pre>")
+                parts.append(markdownToTelegramHTML(message))
             }
             parts.append("")
             parts.append("Reply /select N or type your answer")
@@ -185,35 +182,20 @@ final class TelegramService {
         case .stop:
             parts.append("<b>Claude finished</b>")
             parts.append("")
-            if let title = payload.title {
-                parts.append(escapeHTML(title))
-            }
             if let message = payload.message {
-                parts.append(escapeHTML(message))
-            }
-            if let context = payload.terminalContext, !context.isEmpty {
-                parts.append("")
-                parts.append("<pre>")
-                parts.append(escapeHTML(trimmedContext(context)))
-                parts.append("</pre>")
+                parts.append(markdownToTelegramHTML(message))
             }
             parts.append("")
             parts.append("Send next prompt or /status for full view")
 
         case .generic:
-            parts.append("<b>Claude Code Notification</b>")
+            parts.append("<b>Claude Code</b>")
             parts.append("")
             if let title = payload.title {
                 parts.append(escapeHTML(title))
             }
             if let message = payload.message {
-                parts.append(escapeHTML(message))
-            }
-            if let context = payload.terminalContext, !context.isEmpty {
-                parts.append("")
-                parts.append("<pre>")
-                parts.append(escapeHTML(trimmedContext(context)))
-                parts.append("</pre>")
+                parts.append(markdownToTelegramHTML(message))
             }
         }
 
@@ -238,6 +220,64 @@ final class TelegramService {
         }
 
         return parts.joined(separator: "\n")
+    }
+
+    // MARK: - Markdown to Telegram HTML Conversion
+
+    /// Converts Claude's markdown output to Telegram-compatible HTML.
+    /// Handles: bold, italic, inline code, code blocks, and cleans up list markers.
+    private func markdownToTelegramHTML(_ markdown: String) -> String {
+        var text = markdown
+
+        // Convert fenced code blocks (```language\n...\n```) to <pre> before escaping
+        let codeBlockPattern = "```[a-zA-Z]*\\n([\\s\\S]*?)```"
+        if let regex = try? NSRegularExpression(pattern: codeBlockPattern, options: []) {
+            let range = NSRange(text.startIndex..., in: text)
+            text = regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "<pre>$1</pre>")
+        }
+
+        // Extract <pre> blocks to protect them from further processing
+        var preBlocks: [String] = []
+        let prePlaceholderPrefix = "\u{FFFC}PRE_BLOCK_"
+        if let preRegex = try? NSRegularExpression(pattern: "<pre>([\\s\\S]*?)</pre>", options: []) {
+            let nsText = text as NSString
+            let matches = preRegex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
+            for match in matches.reversed() {
+                let fullRange = match.range
+                let content = nsText.substring(with: match.range(at: 1))
+                let index = preBlocks.count
+                preBlocks.append(content)
+                text = nsText.replacingCharacters(in: fullRange, with: "\(prePlaceholderPrefix)\(index)\u{FFFC}") as String
+            }
+        }
+
+        // Escape HTML special characters in the remaining text
+        text = escapeHTML(text)
+
+        // Convert inline code (`code`) to <code>
+        if let inlineCodeRegex = try? NSRegularExpression(pattern: "`([^`]+)`", options: []) {
+            let range = NSRange(text.startIndex..., in: text)
+            text = inlineCodeRegex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "<code>$1</code>")
+        }
+
+        // Convert bold (**text** or __text__) to <b>
+        if let boldRegex = try? NSRegularExpression(pattern: "\\*\\*(.+?)\\*\\*|__(.+?)__", options: []) {
+            let range = NSRange(text.startIndex..., in: text)
+            text = boldRegex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "<b>$1$2</b>")
+        }
+
+        // Convert italic (*text* or _text_) - but not inside words with underscores
+        if let italicRegex = try? NSRegularExpression(pattern: "(?<![\\w*])\\*([^*]+)\\*(?![\\w*])|(?<![\\w_])_([^_]+)_(?![\\w_])", options: []) {
+            let range = NSRange(text.startIndex..., in: text)
+            text = italicRegex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "<i>$1$2</i>")
+        }
+
+        // Restore <pre> blocks with their content HTML-escaped
+        for (index, content) in preBlocks.enumerated() {
+            text = text.replacingOccurrences(of: "\(prePlaceholderPrefix)\(index)\u{FFFC}", with: "<pre>\(escapeHTML(content))</pre>")
+        }
+
+        return text
     }
 
     /// Escapes HTML special characters for Telegram's HTML parse mode
