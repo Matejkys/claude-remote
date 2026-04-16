@@ -212,6 +212,13 @@ final class TmuxService {
         return result.output
     }
 
+    /// Captures pane content with ANSI escape codes preserved (-e flag).
+    /// Used for rich formatting conversion (bold, italic, colors).
+    func capturePaneWithANSI(paneId: String, lines: Int = 50) async -> String {
+        let result = await run("capture-pane", "-t", paneId, "-p", "-e", "-S", "-\(lines)")
+        return result.output
+    }
+
     /// Lists all pane IDs for a session
     func listPanes(session: String) async -> [PaneInfo] {
         let sep = Self.fieldSeparator
