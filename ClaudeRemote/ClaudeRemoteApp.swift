@@ -79,6 +79,7 @@ final class AppController {
 
     private var presenceDetector: PresenceDetector?
     private var telegramService: TelegramService?
+    private var telegramPolling: TelegramPollingService?
     private var localNotifier: LocalNotifier?
     private var notificationRouter: NotificationRouter?
     private var httpListener: HTTPListener?
@@ -127,6 +128,7 @@ final class AppController {
 
         if settings.isTelegramConfigured {
             await checkTelegramStatus()
+            startTelegramPolling()
         }
     }
 
@@ -150,6 +152,20 @@ final class AppController {
         } catch {
             appState.telegramStatus = .error(error.localizedDescription)
         }
+    }
+
+    private func startTelegramPolling() {
+        let polling = TelegramPollingService(
+            settings: settings,
+            tmuxService: tmuxService,
+            onStatusChange: { [weak self] isRunning in
+                Task { @MainActor [weak self] in
+                    self?.appState.relayStatus = isRunning ? .running : .stopped
+                }
+            }
+        )
+        self.telegramPolling = polling
+        polling.start()
     }
 
     func updateLaunchAtLogin(enabled: Bool) {
